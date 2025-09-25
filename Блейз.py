@@ -1,50 +1,70 @@
+# bot_webhook.py
 import os
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from openai import OpenAI
+from flask import Flask, request
+import openai
+import requests
 
-# 🔑 Укажи свои токены
-TELEGRAM_TOKEN = "TELEGRAM_TOKEN"
-OPENAI_API_KEY = "OPENAI_API_KEY"
+# Логирование
+logging.basicConfig(level=logging.INFO)
 
-# создаём клиент OpenAI (работает с openai>=1.0.0)
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Переменные окружения
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
-BLAZE_PROMPT = (
-    "Ты — Блейз. Характер: холодный, рассудительный, немного циничный, "
-    "отвечаешь коротко и атмосферно, как герой мистического триллера. "
-    "Говори от первого лица."
-)
+# URL Telegram API
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Блейз. Говори.")
-    await update.message.reply_text("SMS от будущего: 'Слушай внимательно.'")
+# Flask сервер
+app = Flask(__name__)
 
-async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text or ""
+def send_message(chat_id, text):
+    """Отправка сообщения пользователю Telegram"""
+    url = f"{TELEGRAM_API_URL}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",  # можно сменить
-            messages=[
-                {"role": "system", "content": BLAZE_PROMPT},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=300,
-        )
-        reply = resp.choices[0].message.content
-        await update.message.reply_text(reply)
+        requests.post(url, json=payload)
     except Exception as e:
-        await update.message.reply_text(f"Ошибка при запросе к ИИ: {e}")
+        logging.error(f"Ошибка при отправке сообщения: {e}")
 
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
-    print("Блейз запущен")
-    app.run_polling()
+def generate_reply(user_message):
+    """Генерация ответа через OpenAI"""
+    prompt = f"""
+Ты — Блейз, рассудительный и строгий персонаж из "Темного Рождества".
+Отвечай коротко, мрачно, загадочно.
+Пользователь говорит: "{user_message}"
+Блейз отвечает:
+"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role":"user","content":prompt}],
+            max_tokens=150,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logging.error(f"Ошибка при запросе к ИИ: {e}")
+        return "Ошибка при запросе к ИИ."
+
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    """Главная точка Webhook для Telegram"""
+    data = request.get_json()
+    logging.info(f"Получено сообщение: {data}")
+
+    if "message" in data and "text" in data["message"]:
+        chat_id = data["message"]["chat"]["id"]
+        user_message = data["message"]["text"]
+        reply = generate_reply(user_message)
+        send_message(chat_id, reply)
+
+    return {"ok": True}
+
+@app.route("/")
+def index():
+    return "Блейз бот работает!"
 
 if __name__ == "__main__":
-    main()
-
-
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
