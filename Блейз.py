@@ -5,7 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from openai import OpenAI
 
 # 🔑 Укажи свои токены
-TELEGRAM_TOKEN = "7642810523:AAG96nWGoHZFgI_g94zALaIt_AsBUNvDndw"
+TELEGRAM_TOKEN = "TELEGRAM_TOKEN"
 OPENAI_API_KEY = "OPENAI_API_KEY"
 
 # создаём клиент OpenAI (работает с openai>=1.0.0)
@@ -46,4 +46,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
